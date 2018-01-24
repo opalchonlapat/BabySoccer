@@ -161,7 +161,7 @@ def result_plot(inp): # plot result
         list_res = [compare_results.loc[compare_results['home_team'].str.contains(inp), 'win'].to_string(index=False),
                     compare_results.loc[compare_results['home_team'].str.contains(inp), 'draw'].to_string(index=False),
                     compare_results.loc[compare_results['home_team'].str.contains(inp), 'lose'].to_string(index=False)]
-        label = np.array(['win', 'draw', 'lose'])
+        label = np.array(['Win', 'Draw', 'Lose'])
         color = ['green', 'yellow', 'red']
         print(list_res)
         plt.pie(list_res, labels=label, startangle=90, colors=color, autopct='%1.2f%%')
@@ -170,11 +170,25 @@ def result_plot(inp): # plot result
         list_res = [compare_results.loc[compare_results['away_team'].str.contains(inp), 'win'].to_string(index=False),
                     compare_results.loc[compare_results['away_team'].str.contains(inp), 'draw'].to_string(index=False),
                     compare_results.loc[compare_results['away_team'].str.contains(inp), 'lose'].to_string(index=False)]
-        label = np.array(['win', 'draw', 'lose'])
-        color = ['green', 'yellow', 'red']
+        label = np.array(['Lose', 'Draw', 'Win'])
+        color = ['red', 'yellow', 'green']
         print(list_res)
         plt.pie(list_res, labels=label, startangle=90, colors=color, autopct='%1.2f%%')
         plt.show()
+
+def Next_week_result():
+    week_array = np.array([])
+    for _ in range(10):
+        this_week_result = input('How does home team result ([W]in, [D]raw, [L]ose]) : ')
+        if this_week_result.capitalize() == 'W':
+            week_array = np.append(week_array, ['win'])
+        elif this_week_result.capitalize() == 'D':
+            week_array = np.append(week_array, ['draw'])
+        elif this_week_result.capitalize() == 'L':
+            week_array = np.append(week_array, ['lose'])
+        else:
+            print('Error result')
+    return week_array
 
 if __name__ == '__main__':
     # engine  = create_engine("sqlite:///../input/database.sqlite")
@@ -355,11 +369,17 @@ if __name__ == '__main__':
     model_test_matches = model_test_matches.reset_index(drop=True)
     model_test_matches
 
+    # ดึงผลโหวตของการแข่งขันนัดต่อไปมาช่วยในการทำนาย
+    train_match_features = pd.concat([train_match_features, test_match_features]) # ต้องใช้ข้อมูลการแข่งนัดต่อไปด้วย
+    target_this_week = Next_week_result() # รับผลโหวตเป็น array
+    targets = np.append(targets, target_this_week) # เอาตัวหลังไปต่อตัวหน้า
+
     # Train, then predict
     model = MultinomialNB()
-
-    model.fit(train_match_features.values, targets)
-    predicted = model.predict_proba(test_match_features.values)
+    # np.place(targets, targets == 'draw', ['lose'])
+    # targets
+    model.fit(train_match_features.values, targets) # train model
+    predicted = model.predict_proba(test_match_features.values) # predicted จะมีกี่แบบ ขึ้นอยู่ target ที่เราเคย train มาว่าแบ่งได้เป็นกี่คำตอบ
 
     # Format the output into a DF with columns
     predicted_table = pd.DataFrame(predicted, columns=['draw', 'lose', 'win'])
