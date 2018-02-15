@@ -4,15 +4,26 @@
 
 import numpy as np # linear algebra
 import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
-import matplotlib.pyplot as plt
 
 import sqlalchemy
 from sqlalchemy import create_engine # database connection
 import sqlite3
+import matplotlib.pyplot as plt
 
 from IPython.display import display, clear_output
 from sklearn.naive_bayes import MultinomialNB
 from datetime import datetime
+from sklearn.metrics import accuracy_score
+
+# Input data files are available in the "../input/" directory.
+# For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
+
+from subprocess import check_output
+# print(check_output(["ls", "../input"]).decode("utf8"))
+
+# Any results you write to the current directory are saved as output.
+
+import sys
 
 # Input data files are available in the "../input/" directory.
 # For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
@@ -129,6 +140,8 @@ def create_match_id():
         match_id_num2.append(i + int(last_season[-1:]['match_id']))
     return match_id_num2
 
+# State the result as home or away win/draw/lose - 6 possibilites
+# Create a binary result
 def determine_result(match_list):
     match_list['home_win'] = np.where(match_list['home_team_goal'] > match_list['away_team_goal'], 1, 0)
     match_list['home_draw'] = np.where(match_list['home_team_goal'] == match_list['away_team_goal'], 1, 0)
@@ -136,6 +149,8 @@ def determine_result(match_list):
     match_list['away_win'] = np.where(match_list['home_team_goal'] < match_list['away_team_goal'], 1, 0)
     match_list['away_draw'] = np.where(match_list['home_team_goal'] == match_list['away_team_goal'], 1, 0)
     match_list['away_lose'] = np.where(match_list['home_team_goal'] > match_list['away_team_goal'], 1, 0)
+
+# Get the target results for training
 
 # Function to determine whether result is a win/draw/lose
 def determine_home_result(match):
@@ -155,40 +170,6 @@ def predict_home_result(match):
         return 'lose'
     else:
         return 'draw'
-
-def result_plot(inp): # plot result
-    if compare_results[compare_results['home_team'].str.contains(inp)].empty == False:
-        list_res = [compare_results.loc[compare_results['home_team'].str.contains(inp), 'win'].to_string(index=False),
-                    compare_results.loc[compare_results['home_team'].str.contains(inp), 'draw'].to_string(index=False),
-                    compare_results.loc[compare_results['home_team'].str.contains(inp), 'lose'].to_string(index=False)]
-        label = np.array(['Win', 'Draw', 'Lose'])
-        color = ['green', 'yellow', 'red']
-        print(list_res)
-        plt.pie(list_res, labels=label, startangle=90, colors=color, autopct='%1.2f%%')
-        plt.show()
-    elif compare_results[compare_results['away_team'].str.contains(inp)].empty == False:
-        list_res = [compare_results.loc[compare_results['away_team'].str.contains(inp), 'win'].to_string(index=False),
-                    compare_results.loc[compare_results['away_team'].str.contains(inp), 'draw'].to_string(index=False),
-                    compare_results.loc[compare_results['away_team'].str.contains(inp), 'lose'].to_string(index=False)]
-        label = np.array(['Lose', 'Draw', 'Win'])
-        color = ['red', 'yellow', 'green']
-        print(list_res)
-        plt.pie(list_res, labels=label, startangle=90, colors=color, autopct='%1.2f%%')
-        plt.show()
-
-def Next_week_result():
-    week_array = np.array([])
-    for _ in range(10):
-        this_week_result = input('How does home team result ([W]in, [D]raw, [L]ose]) : ')
-        if this_week_result.capitalize() == 'W':
-            week_array = np.append(week_array, ['win'])
-        elif this_week_result.capitalize() == 'D':
-            week_array = np.append(week_array, ['draw'])
-        elif this_week_result.capitalize() == 'L':
-            week_array = np.append(week_array, ['lose'])
-        else:
-            print('Error result')
-    return week_array
 
 if __name__ == '__main__':
     # engine  = create_engine("sqlite:///../input/database.sqlite")
@@ -215,14 +196,14 @@ if __name__ == '__main__':
     with sqlite3.connect('database2.sqlite') as con:
         matches_data_16 = pd.read_sql('select * from match;', con)
         matches_data_17 = pd.read_sql('select * from match17;', con)
-        matches_schedule = pd.read_sql('select * from match_schedule3;', con)
+        matches_schedule = pd.read_sql('select * from match_schedule;', con)
+        team_rating = pd.read_sql('select * from team_rating;', con)
     # matches_data_16['date'] = pd.to_datetime(matches_data_16['date'])
 
     matches_data_16 = convert_date_to_code16(matches_data_16)
     matches_data_17 = convert_date_to_code17(matches_data_17)
     matches_schedule = convert_date_to_code17(matches_schedule)
     last_season = pd.concat([matches_data_16, matches_data_17])
-    # last_season.tail()
     # int(last_season[-1:]['match_id'])
     # matches_schedule.set_index('index', inplace=True)
     # matches_schedule.columns = ['date', 'home_team_goal', 'away_team_goal', 'home_team', 'away_team', 'season', 'stage']
@@ -230,10 +211,13 @@ if __name__ == '__main__':
     # matches_schedule.head(190)
     match_id = create_match_id()
     # match_id
+    last_season.tail()
 
     # Parameters to change depending on season and wek we are running for
     this_season = '2017/2018'
     this_week = int(matches_data_17[-1:]['stage']) + 1
+    train_ratio = .8
+    model_weight = .8
     this_week
 
     matches_schedule = matches_schedule.loc[matches_schedule['stage'] == this_week]
@@ -255,13 +239,7 @@ if __name__ == '__main__':
     full_matches.drop(matches[matches.season == '2009/2010'].index, inplace=True)
     full_matches.drop(matches[matches.season == '2010/2011'].index, inplace=True)
     full_matches.drop(matches[matches.season == '2011/2012'].index, inplace=True)
-    # Only use the seasons we require - Optimum appears to be for season 12/13 onwards
 
-    # unique_seasons = pd.Series(matches['season'].unique())
-    # exclude_seasons = pd.Series(['2008/2009', '2009/2010', '2010/2011', '2011/2012'])
-    # include_seasons = unique_seasons[~unique_seasons.isin(exclude_seasons)]
-    # full_matches = full_matches.loc[full_matches['season'].isin(include_seasons)]
-    # full_matches.reset_index(drop=True, inplace=True)
     full_matches
 
     # Set up the matches data how I need it
@@ -301,25 +279,25 @@ if __name__ == '__main__':
     new_teams = pd.DataFrame(team_data, columns=['team', 'season'])
     new_teams.head()
 
-    # Cater for new teams by setting the new team for that season to a generic name
-
-    for index, row in new_teams.iterrows():
-        for index1, row1 in full_matches.iterrows():
-            if (row1['home_team'] == row['team']) & (row1['season'] == row['season']):
-                full_matches.loc[index1, 'home_team'] = 'Promoted'
-            if (row1['away_team'] == row['team']) & (row1['season'] == row['season']):
-                full_matches.loc[index1, 'away_team'] = 'Promoted'
-
-    full_matches.head(20)
-
     full_match_features = pd.DataFrame(full_matches[['season', 'stage']])
     # ,
     # columns=[['season', 'stage']])
     full_match_features.head()
 
+    team_rating.drop('team_rating_id', axis=1, inplace=True)
+    team_rating2 = team_rating.copy()
+    team_rating = team_rating.rename(columns={'team_name': 'home_team'})
+    team_rating2 = team_rating2.rename(columns={'team_name': 'away_team'})
+
+    full_matches = pd.merge(full_matches, team_rating, how='left', on=['season', 'home_team'])
+    full_matches = full_matches.rename(columns={'team_rating': 'home_team_rating'})
+    full_matches = pd.merge(full_matches, team_rating2, how='left', on=['season', 'away_team'])
+    full_matches = full_matches.rename(columns={'team_rating': 'away_team_rating'})
+    full_matches
+
     # Convert home & team into a binary feature, ie Arsenal_h or Arsenal_a
     # Need all seasons data for team binary feature
-    full_match_features = pd.DataFrame(full_matches[['season', 'stage']])
+    full_match_features = pd.DataFrame(full_matches[['season', 'stage']])  # เอา column ไหนมาบ้าง
     #                                    columns=[['season', 'stage']])
 
     full_match_features = pd.concat(
@@ -329,23 +307,30 @@ if __name__ == '__main__':
         [full_match_features, pd.get_dummies(full_matches['away_team']).rename(columns=lambda x: str(x) + '_a')],
         axis=1)
 
-    full_match_features.head()
+    full_match_features.head()  # ข้อมูลสถิติเก่าๆ
+
+    # DataFrame team rating
+    full_match_features_2 = pd.DataFrame(full_matches[['season', 'stage', 'home_team_rating', 'away_team_rating']])
+
+    full_match_features_2.head()  # ข้อมูล team rating
 
     # To predict this season (1, this week only, remove this week from training set
-    train_match_features = full_match_features.loc[(full_match_features['season'] != this_season) |
-                                                   (full_match_features['season'] == this_season) &
-                                                   (full_match_features['stage'] < this_week)].copy()
+    train_match_features = full_match_features.loc[:int(full_match_features.shape[0] * train_ratio)].copy()
 
     train_match_features.drop(['season'], axis=1, inplace=True)
     train_match_features.tail()
+
+    # To predict this season (1, this week only, remove this week from training set
+    train_match_features_2 = full_match_features_2.loc[:int(full_match_features.shape[0] * train_ratio)].copy()
+
+    train_match_features_2.drop(['season', 'stage'], axis=1, inplace=True)
+    train_match_features_2.tail()
 
     #   Add the home team result column to the matches dataframe
     full_matches['home_team_result'] = full_matches.apply(determine_home_result, axis=1)
 
     # To predict this season, this week, remove latest week from training results
-    train_matches = full_matches.loc[(full_matches['season'] != this_season) |
-                                     (full_matches['season'] == this_season) &
-                                     (full_matches['stage'] < this_week)].copy()
+    train_matches = full_matches.loc[:int(full_matches.shape[0] * train_ratio)].copy()
 
     targets = train_matches['home_team_result'].values
     train_matches.tail()
@@ -353,33 +338,49 @@ if __name__ == '__main__':
     # Get the test matches in correct format:
 
     # Predict this season this week
-    test_match_features = full_match_features.loc[(full_match_features['season'] == this_season) &
-                                                  (full_match_features['stage'] == this_week)].copy()
+    test_match_features = full_match_features.loc[int(full_match_features.shape[0] * train_ratio):].copy()
 
+    test_match_features.drop(full_match_features.index[-10:], inplace=True)
     test_match_features.drop(['season'], axis=1, inplace=True)
     test_match_features
 
+    test_match_features_1 = full_match_features.iloc[-10:].copy()
+    test_match_features_1.drop(['season'], axis=1, inplace=True)
+    test_match_features_1
+
+    test_match_features_2 = full_match_features_2.loc[int(full_match_features.shape[0] * train_ratio):].copy()
+
+    test_match_features_2.drop(full_match_features.index[-10:], inplace=True)
+    test_match_features_2.drop(['season', 'stage'], axis=1, inplace=True)
+    test_match_features_2
+
+    test_match_features_2_1 = full_match_features_2.iloc[-10:].copy()
+    test_match_features_2_1.drop(['season', 'stage'], axis=1, inplace=True)
+    test_match_features_2_1
+
     # Don't have the target results yet but I have entered dummy data of 0-0 draws.
     # Then re-run with actual scores after they are played for comparison
-    model_test_matches = full_matches.loc[(full_matches['season'] == this_season) &
-                                          (full_matches['stage'] == this_week)].copy()
+    model_test_matches = full_matches.loc[int(full_matches.shape[0] * train_ratio):].copy()
     # model_test_matches = full_matches.loc[(full_matches['season'] == this_season) &
     #                                      (full_matches['stage'] == this_week - 1)].copy()
 
+    model_test_matches.drop(full_match_features.index[-10:], inplace=True)
     model_test_matches = model_test_matches.reset_index(drop=True)
     model_test_matches
 
-    # ดึงผลโหวตของการแข่งขันนัดต่อไปมาช่วยในการทำนาย
-    train_match_features = pd.concat([train_match_features, test_match_features]) # ต้องใช้ข้อมูลการแข่งนัดต่อไปด้วย
-    target_this_week = Next_week_result() # รับผลโหวตเป็น array
-    targets = np.append(targets, target_this_week) # เอาตัวหลังไปต่อตัวหน้า
+    model_test_matches_1 = full_matches.iloc[-10:].copy()
+    # model_test_matches = full_matches.loc[(full_matches['season'] == this_season) &
+    #                                      (full_matches['stage'] == this_week - 1)].copy()
+
+    # model_test_matches.drop(full_match_features.index[-10:], inplace=True)
+    model_test_matches_1 = model_test_matches_1.reset_index(drop=True)
+    model_test_matches_1
 
     # Train, then predict
     model = MultinomialNB()
-    # np.place(targets, targets == 'draw', ['lose'])
-    # targets
-    model.fit(train_match_features.values, targets) # train model
-    predicted = model.predict_proba(test_match_features.values) # predicted จะมีกี่แบบ ขึ้นอยู่ target ที่เราเคย train มาว่าแบ่งได้เป็นกี่คำตอบ
+
+    model.fit(train_match_features.values, targets)  # รับเป็น array ของสิ่งที่จะทำนายและผลเข้าไป
+    predicted = model.predict_proba(test_match_features.values)  # รับเป็น array อาทิตที่จะทำนายต่อไป
 
     # Format the output into a DF with columns
     predicted_table = pd.DataFrame(predicted, columns=['draw', 'lose', 'win'])
@@ -393,15 +394,129 @@ if __name__ == '__main__':
                      == model_test_matches['home_team_result']].count()) / model_test_matches[
         'home_team_result'].count()
 
+    predicted_1 = model.predict_proba(test_match_features_1.values)  # รับเป็น array อาทิตที่จะทำนายต่อไป
+
+    # Format the output into a DF with columns
+    predicted_table_1 = pd.DataFrame(predicted_1, columns=['draw', 'lose', 'win'])
+
+    # Compare predicted with test actual results
+    predicted_table_1['predict_res'] = predicted_table_1.apply(predict_home_result, axis=1)
+    predicted_table_1['actual_res'] = model_test_matches_1['home_team_result']
+
+    # Straight comparison - count of equal / total to get %
+    (predicted_table_1[predicted_table_1['predict_res']
+                       == model_test_matches_1['home_team_result']].count()) / model_test_matches_1[
+        'home_team_result'].count()
+
+    # Train, then predict
+    model_2 = MultinomialNB()
+
+    model_2.fit(train_match_features_2.values, targets)  # รับเป็น array ของสิ่งที่จะทำนายและผลเข้าไป
+    predicted_2 = model_2.predict_proba(test_match_features_2.values)  # รับเป็น array อาทิตที่จะทำนายต่อไป
+
+    # Format the output into a DF with columns
+    predicted_table_2 = pd.DataFrame(predicted_2, columns=['draw', 'lose', 'win'])
+
+    # Compare predicted with test actual results
+    predicted_table_2['predict_res'] = predicted_table_2.apply(predict_home_result, axis=1)
+    predicted_table_2['actual_res'] = model_test_matches['home_team_result']
+
+    # Straight comparison - count of equal / total to get %
+    (predicted_table_2[predicted_table_2['predict_res']
+                       == model_test_matches['home_team_result']].count()) / model_test_matches[
+        'home_team_result'].count()
+
+    predicted_2_1 = model_2.predict_proba(test_match_features_2_1.values)  # รับเป็น array อาทิตที่จะทำนายต่อไป
+
+    # Format the output into a DF with columns
+    predicted_table_2_1 = pd.DataFrame(predicted_2_1, columns=['draw', 'lose', 'win'])
+
+    # Compare predicted with test actual results
+    predicted_table_2_1['predict_res'] = predicted_table_2_1.apply(predict_home_result, axis=1)
+    predicted_table_2_1['actual_res'] = model_test_matches_1['home_team_result']
+
+    # Straight comparison - count of equal / total to get %
+    (predicted_table_2_1[predicted_table_2_1['predict_res']
+                         == model_test_matches_1['home_team_result']].count()) / model_test_matches_1[
+        'home_team_result'].count()
+
     # evaluate accuracy of prediction
-    print('Accuracy of prediction = {:.2f}%'.format(model.score(train_match_features.values, targets) * 100))
+    # model.score(train_match_features.values, targets)
+    print(
+        'Accuracy of prediction (old match) = {:.2f}%'.format(model.score(train_match_features.values, targets) * 100))
+
+    print('Accuracy of prediction (team rating) = {:.2f}%'.format(
+        model_2.score(train_match_features_2.values, targets) * 100))
 
     compare_results = model_test_matches[['match_id', 'stage', 'home_team_goal',
                                           'away_team_goal', 'home_team', 'away_team']].copy()
     compare_results.rename(columns={'home_team_goal': 'h_goal', 'away_team_goal': 'a_goal'}, inplace=True)
     compare_results = pd.concat([compare_results, predicted_table], axis=1)
-    print(compare_results)
+    compare_results = compare_results[
+        ['match_id', 'stage', 'h_goal', 'a_goal', 'home_team', 'predict_res', 'away_team', 'draw', 'lose', 'win',
+         'actual_res']]
+    compare_results = compare_results.rename(columns={'predict_res': 'predict_result'})
+    compare_results.tail(10)
 
-    # get favorite team to show result graph
-    inp = input('Team name : ')
-    result_plot(inp)
+    compare_results_2 = model_test_matches[['match_id', 'stage', 'home_team_goal',
+                                            'away_team_goal', 'home_team', 'away_team']].copy()
+    compare_results_2.rename(columns={'home_team_goal': 'h_goal', 'away_team_goal': 'a_goal'}, inplace=True)
+    compare_results_2 = pd.concat([compare_results_2, predicted_table_2], axis=1)
+    compare_results_2 = compare_results_2[
+        ['match_id', 'stage', 'h_goal', 'a_goal', 'home_team', 'predict_res', 'away_team', 'draw', 'lose', 'win',
+         'actual_res']]
+    compare_results_2 = compare_results_2.rename(columns={'predict_res': 'predict_result'})
+    compare_results_2.tail(10)
+
+    compare_results_3 = compare_results.copy()
+
+    # weight data
+    compare_results_3['draw'] = compare_results['draw'] * model_weight + compare_results_2['draw'] * (1 - model_weight)
+    compare_results_3['lose'] = compare_results['lose'] * model_weight + compare_results_2['lose'] * (1 - model_weight)
+    compare_results_3['win'] = compare_results['win'] * model_weight + compare_results_2['win'] * (1 - model_weight)
+    compare_results_3['predict_result'] = compare_results_3.apply(predict_home_result, axis=1)
+    compare_results_3.tail(10)
+
+    # targets # ผลการแข่งขันจริงๆ
+    print('Total accuracy of prediction = {:.2f}%'.format(
+        accuracy_score(compare_results_3['actual_res'], compare_results_3['predict_result']) * 100))
+
+    compare_results_1_1 = model_test_matches_1[['match_id', 'stage', 'home_team_goal',
+                                                'away_team_goal', 'home_team', 'away_team']].copy()
+    compare_results_1_1.rename(columns={'home_team_goal': 'h_goal', 'away_team_goal': 'a_goal'}, inplace=True)
+    compare_results_1_1 = pd.concat([compare_results_1_1, predicted_table_1], axis=1)
+    compare_results_1_1 = compare_results_1_1[
+        ['match_id', 'stage', 'h_goal', 'a_goal', 'home_team', 'predict_res', 'away_team', 'draw', 'lose', 'win',
+         'actual_res']]
+    compare_results_1_1 = compare_results_1_1.rename(columns={'predict_res': 'predict_result'})
+    compare_results_1_1
+
+    compare_results_2_1 = model_test_matches_1[['match_id', 'stage', 'home_team_goal',
+                                                'away_team_goal', 'home_team', 'away_team']].copy()
+    compare_results_2_1.rename(columns={'home_team_goal': 'h_goal', 'away_team_goal': 'a_goal'}, inplace=True)
+    compare_results_2_1 = pd.concat([compare_results_2_1, predicted_table_2_1], axis=1)
+    compare_results_2_1 = compare_results_2_1[
+        ['match_id', 'stage', 'h_goal', 'a_goal', 'home_team', 'predict_res', 'away_team', 'draw', 'lose', 'win',
+         'actual_res']]
+    compare_results_2_1 = compare_results_2_1.rename(columns={'predict_res': 'predict_result'})
+    compare_results_2_1
+
+    compare_results_3_1 = compare_results_1_1.copy()
+
+    # weight data
+    compare_results_3_1['draw'] = compare_results_1_1['draw'] * model_weight + compare_results_2_1['draw'] * (
+                1 - model_weight)
+    compare_results_3_1['lose'] = compare_results_1_1['lose'] * model_weight + compare_results_2_1['lose'] * (
+                1 - model_weight)
+    compare_results_3_1['win'] = compare_results_1_1['win'] * model_weight + compare_results_2_1['win'] * (
+                1 - model_weight)
+    compare_results_3_1['predict_result'] = compare_results_3_1.apply(predict_home_result, axis=1)
+    compare_results_3_1.drop('actual_res', axis=1, inplace=True)
+    compare_results_3_1
+
+    print(compare_results_3_1) # เชื่อม php แล้วไม่ต้องการให้ output ตัวนี้ออกไป
+
+    # save result table to json file
+    # result_json = compare_results.to_json(orient='records')
+    result_json = compare_results_3_1.to_json("C:/xampp/htdocs/bbs/result.JSON", orient='records')
+    # print(result_json)
