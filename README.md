@@ -1,5 +1,5 @@
-# BabySoccer
+# My project
 
-### My project
+### BabySoccer : Web application for analysis and prediction football result.
 
-This is data analytic part of my project.
+This is data analytic and machine learning part of my project.
