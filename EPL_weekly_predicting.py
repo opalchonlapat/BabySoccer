@@ -182,11 +182,13 @@ if __name__ == '__main__':
     teams = pd.read_sql_query('SELECT * FROM Team;', engine)
 
     # Add team names & tidy up
-    matches = pd.merge(left=matches, right=teams, how='left', left_on='home_team_api_id', right_on='team_api_id')
-    matches = matches.drop(['country_id', 'league_id', 'home_team_api_id', 'id_y', 'team_api_id', 'team_short_name'],
-                           axis=1)
+    matches = pd.merge(left=matches, right=teams, how='left', left_on='home_team_api_id',
+                       right_on='team_api_id')
+    matches = matches.drop(
+        ['country_id', 'league_id', 'home_team_api_id', 'id_y', 'team_api_id', 'team_short_name'], axis=1)
     matches.rename(columns={'id_x': 'match_id', 'team_long_name': 'home_team'}, inplace=True)
-    matches = pd.merge(left=matches, right=teams, how='left', left_on='away_team_api_id', right_on='team_api_id')
+    matches = pd.merge(left=matches, right=teams, how='left', left_on='away_team_api_id',
+                       right_on='team_api_id')
     matches = matches.drop(['id', 'match_api_id', 'away_team_api_id', 'team_api_id', 'team_short_name'], axis=1)
     matches.rename(columns={'id_x': 'match_id', 'team_long_name': 'away_team'}, inplace=True)
 
@@ -290,8 +292,14 @@ if __name__ == '__main__':
     team_rating2 = team_rating2.rename(columns={'team_name': 'away_team'})
 
     full_matches = pd.merge(full_matches, team_rating, how='left', on=['season', 'home_team'])
+    full_matches = full_matches.rename(columns={'attack_rating': 'home_team_attack_rating'})
+    full_matches = full_matches.rename(columns={'midfield_rating': 'home_team_midfield_rating'})
+    full_matches = full_matches.rename(columns={'defence_rating': 'home_team_defence_rating'})
     full_matches = full_matches.rename(columns={'team_rating': 'home_team_rating'})
     full_matches = pd.merge(full_matches, team_rating2, how='left', on=['season', 'away_team'])
+    full_matches = full_matches.rename(columns={'attack_rating': 'away_team_attack_rating'})
+    full_matches = full_matches.rename(columns={'midfield_rating': 'away_team_midfield_rating'})
+    full_matches = full_matches.rename(columns={'defence_rating': 'away_team_defence_rating'})
     full_matches = full_matches.rename(columns={'team_rating': 'away_team_rating'})
     full_matches
 
@@ -310,7 +318,11 @@ if __name__ == '__main__':
     full_match_features.head()  # ข้อมูลสถิติเก่าๆ
 
     # DataFrame team rating
-    full_match_features_2 = pd.DataFrame(full_matches[['season', 'stage', 'home_team_rating', 'away_team_rating']])
+    full_match_features_2 = pd.DataFrame(full_matches[['season', 'stage', 'home_team_attack_rating',
+                                                       'home_team_midfield_rating', 'home_team_defence_rating',
+                                                       'home_team_rating', 'away_team_attack_rating',
+                                                       'away_team_midfield_rating', 'away_team_defence_rating',
+                                                       'away_team_rating']])
 
     full_match_features_2.head()  # ข้อมูล team rating
 
@@ -440,14 +452,6 @@ if __name__ == '__main__':
                          == model_test_matches_1['home_team_result']].count()) / model_test_matches_1[
         'home_team_result'].count()
 
-    # evaluate accuracy of prediction
-    # model.score(train_match_features.values, targets)
-    print(
-        'Accuracy of prediction (old match) = {:.2f}%'.format(model.score(train_match_features.values, targets) * 100))
-
-    print('Accuracy of prediction (team rating) = {:.2f}%'.format(
-        model_2.score(train_match_features_2.values, targets) * 100))
-
     compare_results = model_test_matches[['match_id', 'stage', 'home_team_goal',
                                           'away_team_goal', 'home_team', 'away_team']].copy()
     compare_results.rename(columns={'home_team_goal': 'h_goal', 'away_team_goal': 'a_goal'}, inplace=True)
@@ -476,6 +480,13 @@ if __name__ == '__main__':
     compare_results_3['win'] = compare_results['win'] * model_weight + compare_results_2['win'] * (1 - model_weight)
     compare_results_3['predict_result'] = compare_results_3.apply(predict_home_result, axis=1)
     compare_results_3.tail(10)
+
+    # evaluate accuracy of prediction
+    print('Accuracy of prediction (old match) = {:.2f}%'.format(
+        accuracy_score(compare_results['actual_res'], compare_results['predict_result']) * 100))
+
+    print('Accuracy of prediction (team rating) = {:.2f}%'.format(
+        accuracy_score(compare_results_2['actual_res'], compare_results_2['predict_result']) * 100))
 
     # targets # ผลการแข่งขันจริงๆ
     print('Total accuracy of prediction = {:.2f}%'.format(
