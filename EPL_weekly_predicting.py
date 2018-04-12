@@ -14,6 +14,7 @@ from IPython.display import display, clear_output
 from sklearn.naive_bayes import MultinomialNB
 from datetime import datetime
 from sklearn.metrics import accuracy_score
+import os
 
 # Input data files are available in the "../input/" directory.
 # For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
@@ -32,51 +33,6 @@ from subprocess import check_output
 # print(check_output(["ls", "../input"]).decode("utf8"))
 
 # Any results you write to the current directory are saved as output.
-
-def convert_date_to_code16(matches_data_16):
-    date = []
-    for i in matches_data_16['date']:
-        date.append(i)
-    x = date[0]
-    d = datetime.strptime(x, "%d/%m/%y").date()
-    dict2 = {}
-    base = 42595
-    for i in date:
-        date_l = datetime.strptime(i, "%d/%m/%y").date()
-        date_dif = date_l - d
-        dict2[date_l] = str(base + date_dif.days)
-    t = []
-    for i in range(len(date)):
-        t.append(dict2[datetime.strptime(date[i], '%d/%m/%y').date()])
-    matches_data_16['date'] = list(map((lambda i: t[i]), range(len(t))))
-    return matches_data_16
-
-def convert_date_to_code17(matches_data_17):
-    stage = []
-    for i in matches_data_17['stage']:
-        stage.append(i)
-    date = []
-    for i in matches_data_17['date']:
-        date.append(i)
-    dict_date = {}
-    for i, j in zip(stage, date):
-        dict_date[i] = datetime.strptime(j, "%d/%m/%y").date()
-    dict2 = {}
-    base = 42959
-    for i in stage:
-        if i == 1:
-            dict2[i] = base
-        else:
-            date_dif = dict_date[i] - dict_date[i - 1]
-            if date_dif.days < 13:
-                dict2[i] = dict2[i - 1] + 7
-            if date_dif.days >= 13:
-                dict2[i] = dict2[i - 1] + 14
-    t = []
-    for i in stage:
-        t.append(str(dict2[i]))
-    matches_data_17['date'] = list(map((lambda i: t[i]), range(len(t))))
-    return matches_data_17
 
 def convert_team_name(last_season):
     for index, row in last_season.iterrows():
@@ -131,15 +87,6 @@ def convert_team_name(last_season):
             last_season.loc[index, 'away_team'] = 'Huddersfield'
     return last_season
 
-def create_match_id():
-    match_id_num = []
-    match_id_num2 = []
-    for i in range(1, 11):
-        match_id_num.append(i)
-    for i in match_id_num:
-        match_id_num2.append(i + int(last_season[-1:]['match_id']))
-    return match_id_num2
-
 # State the result as home or away win/draw/lose - 6 possibilites
 # Create a binary result
 def determine_result(match_list):
@@ -182,13 +129,11 @@ if __name__ == '__main__':
     teams = pd.read_sql_query('SELECT * FROM Team;', engine)
 
     # Add team names & tidy up
-    matches = pd.merge(left=matches, right=teams, how='left', left_on='home_team_api_id',
-                       right_on='team_api_id')
-    matches = matches.drop(
-        ['country_id', 'league_id', 'home_team_api_id', 'id_y', 'team_api_id', 'team_short_name'], axis=1)
+    matches = pd.merge(left=matches, right=teams, how='left', left_on='home_team_api_id', right_on='team_api_id')
+    matches = matches.drop(['country_id', 'league_id', 'home_team_api_id', 'id_y', 'team_api_id', 'team_short_name'],
+                           axis=1)
     matches.rename(columns={'id_x': 'match_id', 'team_long_name': 'home_team'}, inplace=True)
-    matches = pd.merge(left=matches, right=teams, how='left', left_on='away_team_api_id',
-                       right_on='team_api_id')
+    matches = pd.merge(left=matches, right=teams, how='left', left_on='away_team_api_id', right_on='team_api_id')
     matches = matches.drop(['id', 'match_api_id', 'away_team_api_id', 'team_api_id', 'team_short_name'], axis=1)
     matches.rename(columns={'id_x': 'match_id', 'team_long_name': 'away_team'}, inplace=True)
 
@@ -196,39 +141,33 @@ if __name__ == '__main__':
     # matches.info()
 
     with sqlite3.connect('database2.sqlite') as con:
-        matches_data_16 = pd.read_sql('select * from match;', con)
-        matches_data_17 = pd.read_sql('select * from match17;', con)
+        matches_new = pd.read_sql('select * from match;', con)
         matches_schedule = pd.read_sql('select * from match_schedule;', con)
         team_rating = pd.read_sql('select * from team_rating;', con)
-    # matches_data_16['date'] = pd.to_datetime(matches_data_16['date'])
-
-    matches_data_16 = convert_date_to_code16(matches_data_16)
-    matches_data_17 = convert_date_to_code17(matches_data_17)
-    matches_schedule = convert_date_to_code17(matches_schedule)
-    last_season = pd.concat([matches_data_16, matches_data_17])
-    # int(last_season[-1:]['match_id'])
-    # matches_schedule.set_index('index', inplace=True)
-    # matches_schedule.columns = ['date', 'home_team_goal', 'away_team_goal', 'home_team', 'away_team', 'season', 'stage']
-    # matches_schedule = convert_team_name(matches_schedule)
-    # matches_schedule.head(190)
-    match_id = create_match_id()
-    # match_id
-    last_season.tail()
 
     # Parameters to change depending on season and wek we are running for
-    this_season = '2017/2018'
-    this_week = int(matches_data_17[-1:]['stage']) + 1
+    last_season = matches_new.iat[-1, 1]
+    last_stage = matches_new.iat[-1, 2]
+    if last_stage == 38:
+        first_season = int(last_season[:4]) + 1
+        end_season = int(last_season[5:]) + 1
+        this_season = f'{first_season}/{last_season}'
+        this_week = (len(matches_new.loc[(matches_new['season'] == this_season)]) // 10) + 1
+    else:
+        this_season = last_season
+        this_week = last_stage + 1
     train_ratio = .8
     model_weight = .8
     this_week
 
-    matches_schedule = matches_schedule.loc[matches_schedule['stage'] == this_week]
-    matches_schedule['match_id'] = match_id
+    matches_schedule = matches_schedule.loc[(matches_schedule['stage'] == this_week) & (matches_schedule['season'] == this_season)]
+    # matches_schedule['match_id'] = match_id
     matches_schedule
 
     # Add to full training data to predict current season
-    matches = pd.concat([matches, last_season, matches_schedule])
+    matches = pd.concat([matches, matches_new, matches_schedule])
     matches = matches.reset_index(drop=True)
+    matches.drop(columns=['match_id', 'team_fifa_api_id_x', 'team_fifa_api_id_y'], inplace=True, axis=1)
     convert_team_name(matches)
     # matches
 
@@ -250,41 +189,14 @@ if __name__ == '__main__':
     determine_result(full_matches)
 
     # Sort in date order
-    full_matches.sort_values(by='date', inplace=True)
+    # full_matches.sort_values(by='date', inplace=True)
 
-    full_matches.head()
-
-    # Cope with newly promoted teams with limited or no stats
-    team_data = {'team': ['West Bromwich Albion', 'Stoke City', 'Hull City',
-                          'Wolverhampton Wanderers', 'Birmingham City', 'Burnley',
-                          'Newcastle United', 'West Bromwich Albion', 'Blackpool',
-                          'Queens Park Rangers', 'Norwich City', 'Swansea City',
-                          'Reading', 'Southampton', 'West Ham United',
-                          'Cardiff City', 'Crystal Palace', 'Hull City',
-                          'Leicester City', 'Burnley', 'Queens Park Rangers',
-                          'Bournemouth', 'Watford', 'Norwich City',
-                          'Burnley', 'Middlesbrough', 'Hull City',
-                          'Brighton', 'Newcastle United', 'Huddersfield'
-                          ],
-                 'season': ["2008/2009", "2008/2009", "2008/2009",
-                            "2009/2010", "2009/2010", "2009/2010",
-                            "2010/2011", "2010/2011", "2010/2011",
-                            "2011/2012", "2011/2012", "2011/2012",
-                            "2012/2013", "2012/2013", "2012/2013",
-                            "2013/2014", "2013/2014", "2013/2014",
-                            "2014/2015", "2014/2015", "2014/2015",
-                            "2015/2016", "2015/2016", "2015/2016",
-                            "2016/2017", "2016/2017", "2016/2017",
-                            "2017/2018", "2017/2018", "2017/2018"
-                            ]
-                 }
-    new_teams = pd.DataFrame(team_data, columns=['team', 'season'])
-    new_teams.head()
+    full_matches
 
     full_match_features = pd.DataFrame(full_matches[['season', 'stage']])
     # ,
     # columns=[['season', 'stage']])
-    full_match_features.head()
+    full_match_features
 
     team_rating.drop('team_rating_id', axis=1, inplace=True)
     team_rating2 = team_rating.copy()
@@ -452,23 +364,21 @@ if __name__ == '__main__':
                          == model_test_matches_1['home_team_result']].count()) / model_test_matches_1[
         'home_team_result'].count()
 
-    compare_results = model_test_matches[['match_id', 'stage', 'home_team_goal',
+    compare_results = model_test_matches[['stage', 'home_team_goal',
                                           'away_team_goal', 'home_team', 'away_team']].copy()
     compare_results.rename(columns={'home_team_goal': 'h_goal', 'away_team_goal': 'a_goal'}, inplace=True)
     compare_results = pd.concat([compare_results, predicted_table], axis=1)
     compare_results = compare_results[
-        ['match_id', 'stage', 'h_goal', 'a_goal', 'home_team', 'predict_res', 'away_team', 'draw', 'lose', 'win',
-         'actual_res']]
+        ['stage', 'h_goal', 'a_goal', 'home_team', 'predict_res', 'away_team', 'draw', 'lose', 'win', 'actual_res']]
     compare_results = compare_results.rename(columns={'predict_res': 'predict_result'})
     compare_results.tail(10)
 
-    compare_results_2 = model_test_matches[['match_id', 'stage', 'home_team_goal',
+    compare_results_2 = model_test_matches[['stage', 'home_team_goal',
                                             'away_team_goal', 'home_team', 'away_team']].copy()
     compare_results_2.rename(columns={'home_team_goal': 'h_goal', 'away_team_goal': 'a_goal'}, inplace=True)
     compare_results_2 = pd.concat([compare_results_2, predicted_table_2], axis=1)
     compare_results_2 = compare_results_2[
-        ['match_id', 'stage', 'h_goal', 'a_goal', 'home_team', 'predict_res', 'away_team', 'draw', 'lose', 'win',
-         'actual_res']]
+        ['stage', 'h_goal', 'a_goal', 'home_team', 'predict_res', 'away_team', 'draw', 'lose', 'win', 'actual_res']]
     compare_results_2 = compare_results_2.rename(columns={'predict_res': 'predict_result'})
     compare_results_2.tail(10)
 
@@ -481,6 +391,13 @@ if __name__ == '__main__':
     compare_results_3['predict_result'] = compare_results_3.apply(predict_home_result, axis=1)
     compare_results_3.tail(10)
 
+    # evaluate accuracy of train data
+    print(
+        'Accuracy of train data (old match) = {:.2f}%'.format(model.score(train_match_features.values, targets) * 100))
+
+    print('Accuracy of train data (team rating) = {:.2f}%'.format(
+        model_2.score(train_match_features_2.values, targets) * 100))
+
     # evaluate accuracy of prediction
     print('Accuracy of prediction (old match) = {:.2f}%'.format(
         accuracy_score(compare_results['actual_res'], compare_results['predict_result']) * 100))
@@ -492,23 +409,21 @@ if __name__ == '__main__':
     print('Total accuracy of prediction = {:.2f}%'.format(
         accuracy_score(compare_results_3['actual_res'], compare_results_3['predict_result']) * 100))
 
-    compare_results_1_1 = model_test_matches_1[['match_id', 'stage', 'home_team_goal',
+    compare_results_1_1 = model_test_matches_1[['stage', 'home_team_goal',
                                                 'away_team_goal', 'home_team', 'away_team']].copy()
     compare_results_1_1.rename(columns={'home_team_goal': 'h_goal', 'away_team_goal': 'a_goal'}, inplace=True)
     compare_results_1_1 = pd.concat([compare_results_1_1, predicted_table_1], axis=1)
     compare_results_1_1 = compare_results_1_1[
-        ['match_id', 'stage', 'h_goal', 'a_goal', 'home_team', 'predict_res', 'away_team', 'draw', 'lose', 'win',
-         'actual_res']]
+        ['stage', 'h_goal', 'a_goal', 'home_team', 'predict_res', 'away_team', 'draw', 'lose', 'win', 'actual_res']]
     compare_results_1_1 = compare_results_1_1.rename(columns={'predict_res': 'predict_result'})
     compare_results_1_1
 
-    compare_results_2_1 = model_test_matches_1[['match_id', 'stage', 'home_team_goal',
+    compare_results_2_1 = model_test_matches_1[['stage', 'home_team_goal',
                                                 'away_team_goal', 'home_team', 'away_team']].copy()
     compare_results_2_1.rename(columns={'home_team_goal': 'h_goal', 'away_team_goal': 'a_goal'}, inplace=True)
     compare_results_2_1 = pd.concat([compare_results_2_1, predicted_table_2_1], axis=1)
     compare_results_2_1 = compare_results_2_1[
-        ['match_id', 'stage', 'h_goal', 'a_goal', 'home_team', 'predict_res', 'away_team', 'draw', 'lose', 'win',
-         'actual_res']]
+        ['stage', 'h_goal', 'a_goal', 'home_team', 'predict_res', 'away_team', 'draw', 'lose', 'win', 'actual_res']]
     compare_results_2_1 = compare_results_2_1.rename(columns={'predict_res': 'predict_result'})
     compare_results_2_1
 
@@ -527,7 +442,14 @@ if __name__ == '__main__':
 
     print(compare_results_3_1) # เชื่อม php แล้วไม่ต้องการให้ output ตัวนี้ออกไป
 
+    # remove json file
+    try:
+        os.remove('result.JSON')
+    except OSError:
+        pass
+
     # save result table to json file
     # result_json = compare_results.to_json(orient='records')
-    result_json = compare_results_3_1.to_json("C:/xampp/htdocs/bbs/result.JSON", orient='records')
+    result_json = compare_results_3_1.to_json("result.JSON", orient='records')
     # print(result_json)
+
